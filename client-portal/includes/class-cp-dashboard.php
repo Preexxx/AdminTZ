@@ -19,6 +19,45 @@ class CP_Dashboard {
 		add_filter( 'login_redirect', array( $this, 'login_redirect' ), 10, 3 );
 		add_action( 'admin_init', array( $this, 'restrict_wp_admin' ) );
 		add_filter( 'allow_password_reset', array( $this, 'disable_self_service_reset' ), 10, 2 );
+		add_filter( 'show_admin_bar', array( $this, 'hide_admin_bar_for_clients' ) );
+		add_action( 'login_enqueue_scripts', array( $this, 'customize_login_screen' ) );
+	}
+
+	/**
+	 * Клієнти заходять на wp-login.php напряму (ніякого окремого кастомного
+	 * логіну в MVP немає), тож прибираємо лого WordPress і трохи зменшуємо
+	 * шрифт полів — за замовчуванням він настільки великий, що довгий
+	 * згенерований пароль не вміщається в поле вводу.
+	 */
+	public function customize_login_screen() {
+		?>
+		<style>
+			#login h1 {
+				display: none;
+			}
+			.login {
+				padding-top: 60px;
+			}
+			#loginform input[type="text"],
+			#loginform input[type="password"] {
+				font-size: 16px;
+			}
+		</style>
+		<?php
+	}
+
+	/**
+	 * Клієнт не має доступу до wp-admin (restrict_wp_admin() вище), тож
+	 * чорна адмін-панель зверху сайту ("Howdy, ..." + посилання на wp-admin)
+	 * йому тільки заважає — ховаємо її лише для ролі cp_client, адмінів не
+	 * чіпаємо.
+	 */
+	public function hide_admin_bar_for_clients( $show ) {
+		$user = wp_get_current_user();
+		if ( $user && $user->exists() && in_array( CP_Roles::ROLE_CLIENT, (array) $user->roles, true ) ) {
+			return false;
+		}
+		return $show;
 	}
 
 	public function login_redirect( $redirect_to, $requested_redirect_to, $user ) {
@@ -115,6 +154,11 @@ class CP_Dashboard {
 					</span>
 					<button type="button" id="cp-refresh" class="cp-icon-btn" title="Оновити" aria-label="Оновити">&#8635;</button>
 					<button type="button" id="cp-settings-toggle" class="cp-icon-btn" title="Налаштування" aria-label="Налаштування">&#9881;</button>
+					<?php $about = get_page_by_path( 'about' ); ?>
+					<?php if ( $about ) : ?>
+						<a href="<?php echo esc_url( get_permalink( $about ) ); ?>" class="cp-about-link">About</a>
+					<?php endif; ?>
+					<a href="<?php echo esc_url( wp_logout_url( home_url( '/' ) ) ); ?>" class="cp-logout-btn">Вийти</a>
 				</div>
 			</div>
 

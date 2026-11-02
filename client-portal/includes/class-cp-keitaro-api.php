@@ -69,6 +69,42 @@ class CP_Keitaro_Api {
 	}
 
 	/**
+	 * id => назва, для випадаючих списків в адмінці (замість вільного
+	 * текстового поля, де неважко помилитися в номері — саме так одного разу
+	 * замість Source ID "5" кілька прив'язок поспіль отримали "55"/"58").
+	 * Короткий кеш (5 хв), щоб відкриття форми щоразу не било в Keitaro API.
+	 */
+	public function get_campaign_options() {
+		return $this->get_id_name_options( 'cp_keitaro_campaign_options', array( $this, 'get_campaigns' ) );
+	}
+
+	public function get_source_options() {
+		return $this->get_id_name_options( 'cp_keitaro_source_options', array( $this, 'get_sources' ) );
+	}
+
+	private function get_id_name_options( $transient_key, $fetch_callback ) {
+		$cached = get_transient( $transient_key );
+		if ( false !== $cached ) {
+			return $cached;
+		}
+
+		$items = call_user_func( $fetch_callback );
+		if ( is_wp_error( $items ) || ! is_array( $items ) ) {
+			return array();
+		}
+
+		$options = array();
+		foreach ( $items as $item ) {
+			if ( isset( $item['id'], $item['name'] ) ) {
+				$options[ (string) $item['id'] ] = $item['name'];
+			}
+		}
+
+		set_transient( $transient_key, $options, 5 * MINUTE_IN_SECONDS );
+		return $options;
+	}
+
+	/**
 	 * $params: date_from, date_to (Y-m-d), campaign_id, source_id,
 	 * grouping ('day' за замовчуванням, або 'day_hour' для погодинної
 	 * розбивки — має сенс лише в межах одного календарного дня).
