@@ -21,6 +21,14 @@ class CP_Sync {
 		add_filter( 'cron_schedules', array( $this, 'register_schedule' ) );
 		add_action( self::CRON_HOOK, array( $this, 'run_sync' ) );
 		add_action( 'admin_post_cp_manual_sync', array( $this, 'handle_manual_sync' ) );
+
+		// schedule_event() лише перевіряє wp_next_scheduled() і виходить, якщо
+		// подія вже є, тож цей виклик майже завжди нічого не робить — але
+		// самовідновлюється, якщо подію колись втрачено (наприклад, плагін
+		// оновили копіюванням файлів поверх живого сайту, без деактивації/
+		// активації через wp-admin, через що register_activation_hook — а з
+		// ним і початкове планування синку — просто ніколи не спрацював).
+		self::schedule_event();
 	}
 
 	public function register_schedule( $schedules ) {
