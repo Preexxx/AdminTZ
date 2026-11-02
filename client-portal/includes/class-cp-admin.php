@@ -32,9 +32,13 @@ class CP_Admin {
 		add_submenu_page( 'cp-clients', 'Додати клієнта', 'Додати клієнта', CP_Roles::CAP_MANAGE_CLIENTS, 'cp-client-edit', array( $this, 'render_client_edit_page' ) );
 		add_submenu_page( 'cp-clients', 'Налаштування', 'Налаштування', CP_Roles::CAP_MANAGE_CLIENTS, 'cp-settings', array( $this, 'render_settings_page' ) );
 		// Сторінка керування прив'язками клієнта доступна тільки через посилання
-		// з таблиці клієнтів, тож прибираємо її з видимого меню.
-		add_submenu_page( 'cp-clients', 'Прив’язки', 'Прив’язки', CP_Roles::CAP_MANAGE_CLIENTS, 'cp-client-links', array( $this, 'render_client_links_page' ) );
-		remove_submenu_page( 'cp-clients', 'cp-client-links' );
+		// з таблиці клієнтів, тож ховаємо її з меню реєстрацією під службовим
+		// батьком 'options.php' (сам ніколи не рендериться як пункт меню).
+		// Робити це через remove_submenu_page() не можна: WordPress визначає
+		// право доступу до сторінки саме з масиву $submenu її батька, і видалення
+		// звідти ламає доступ навіть для адміна з потрібною capability —
+		// "Sorry, you are not allowed to access this page."
+		add_submenu_page( 'options.php', 'Прив’язки', 'Прив’язки', CP_Roles::CAP_MANAGE_CLIENTS, 'cp-client-links', array( $this, 'render_client_links_page' ) );
 	}
 
 	public function enqueue_assets( $hook ) {
