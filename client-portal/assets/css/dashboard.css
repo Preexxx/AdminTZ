@@ -1,46 +1,141 @@
-.cp-dashboard__filters {
-	margin-bottom: 16px;
+.cp-dashboard {
+	max-width: 1100px;
+}
+
+.cp-dashboard__topbar {
 	display: flex;
-	gap: 12px;
 	align-items: center;
+	justify-content: space-between;
 	flex-wrap: wrap;
+	gap: 12px;
+	margin-bottom: 16px;
+}
+
+.cp-dashboard__title {
+	font-size: 26px;
+	font-weight: 700;
+	margin: 0;
+}
+
+.cp-dashboard__controls {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	flex-wrap: wrap;
+}
+
+.cp-select {
+	padding: 8px 10px;
+	border: 1px solid #d6d6d6;
+	border-radius: 6px;
+	background: #fff;
+	font-size: 13.5px;
+	min-width: 160px;
+}
+
+.cp-custom-range {
+	display: inline-flex;
+	gap: 6px;
+}
+
+.cp-custom-range input[type="date"] {
+	padding: 7px 8px;
+	border: 1px solid #d6d6d6;
+	border-radius: 6px;
+	font-size: 13px;
+}
+
+.cp-icon-btn {
+	width: 36px;
+	height: 36px;
+	border: 1px solid #d6d6d6;
+	border-radius: 6px;
+	background: #fff;
+	font-size: 16px;
+	line-height: 1;
+	cursor: pointer;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+}
+.cp-icon-btn:hover {
+	background: #f3f3f3;
+}
+
+.cp-dashboard__settings {
+	margin-bottom: 16px;
+	padding: 12px 14px;
+	border: 1px solid #e2e2e2;
+	border-radius: 8px;
+	background: #fafafa;
+	font-size: 13.5px;
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	flex-wrap: wrap;
+}
+
+.cp-dashboard__settings input[type="number"] {
+	width: 140px;
+}
+
+.cp-dashboard__note {
+	margin: 0 0 16px;
+	padding: 10px 14px;
+	border-radius: 8px;
+	background: #fdf1e3;
+	color: #8a4b0f;
+	font-size: 13px;
 }
 
 .cp-dashboard__cards {
 	display: grid;
 	grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-	gap: 12px;
+	gap: 1px;
+	background: #e2e2e2;
+	border: 1px solid #e2e2e2;
+	border-radius: 10px;
+	overflow: hidden;
+	margin-bottom: 20px;
+}
+
+.cp-dashboard__loading,
+.cp-dashboard__error {
+	grid-column: 1 / -1;
+	padding: 24px;
+	text-align: center;
+	color: #666;
+	background: #fff;
 }
 
 .cp-card {
-	background: #fff;
-	border: 1px solid #e2e2e2;
-	border-radius: 8px;
-	padding: 16px;
+	background: var(--cp-card-color, #2f6fed);
+	color: #fff;
+	padding: 14px 16px;
 }
 
 .cp-card__label {
-	font-size: 12px;
-	color: #666;
+	font-size: 11.5px;
 	text-transform: uppercase;
-	margin-bottom: 4px;
+	letter-spacing: 0.04em;
+	opacity: 0.9;
+	margin-bottom: 6px;
 }
 
 .cp-card__value {
-	font-size: 24px;
-	font-weight: 600;
+	font-size: 22px;
+	font-weight: 700;
+	font-variant-numeric: tabular-nums;
 }
 
-.cp-dashboard__cost {
-	margin-top: 16px;
-	font-size: 13px;
-	color: #555;
+.cp-dashboard__chart-wrap {
+	background: #fff;
+	border: 1px solid #e2e2e2;
+	border-radius: 10px;
+	padding: 16px;
 }
 
-.cp-dashboard__cost #cp-cost-fields {
-	margin-left: 10px;
-}
-
-.cp-dashboard__cost input[type="number"] {
-	width: 140px;
+@media (max-width: 640px) {
+	.cp-dashboard__controls { width: 100%; }
+	.cp-select { flex: 1 1 140px; }
 }

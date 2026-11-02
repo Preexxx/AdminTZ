@@ -47,12 +47,17 @@ class CP_Sync {
 
 	/**
 	 * Тягне свіжу статистику для кожної Client -> Keitaro Campaign/Source прив'язки
-	 * і кладе в локальний кеш (wp_cp_stats). Дашборд клієнта читає тільки з кешу,
-	 * тож падіння/недоступність Keitaro API не ламає кабінет клієнта.
+	 * і кладе в локальний кеш: по кожній кампанії окремо (wp_cp_link_stats —
+	 * дозволяє клієнту фільтрувати дашборд по одній кампанії) і сумарно по
+	 * клієнту (wp_cp_stats — для перемикача "Усі кампанії"). Дашборд клієнта
+	 * на багатоденних періодах читає тільки з цього кешу, тож падіння/
+	 * недоступність Keitaro API не ламає кабінет клієнта (для сьогоднішнього
+	 * погодинного графіка REST ходить у Keitaro наживо — див. CP_Rest).
 	 *
-	 * Клієнт може мати кілька кампаній у Keitaro — тому результати по всіх його
-	 * лінках за один день підсумовуються в одну комірку, а не перезаписують одна
-	 * одну (інакше при 2+ кампаніях на клієнта лишалися б дані тільки останньої).
+	 * Клієнт може мати кілька кампаній у Keitaro — тому для client-level кешу
+	 * результати по всіх його лінках за один день підсумовуються в одну
+	 * комірку, а не перезаписують одна одну (інакше при 2+ кампаніях на
+	 * клієнта лишалися б дані тільки останньої).
 	 */
 	public function run_sync() {
 		$links = CP_DB::get_all_links();
@@ -65,6 +70,8 @@ class CP_Sync {
 			return;
 		}
 
+		$this->sync_campaign_names( $api, $links );
+
 		$lookback_days = max( 1, (int) get_option( 'cp_sync_lookback_days', 3 ) );
 		$date_to       = current_time( 'Y-m-d' );
 		$date_from     = gmdate( 'Y-m-d', strtotime( "-{$lookback_days} days", current_time( 'timestamp' ) ) );
@@ -75,7 +82,7 @@ class CP_Sync {
 		}
 
 		foreach ( $links_by_client as $client_id => $client_links ) {
-			$daily = array();
+			$daily_client = array();
 
 			foreach ( $client_links as $link ) {
 				$rows = $api->build_report(
@@ -84,6 +91,7 @@ class CP_Sync {
 						'date_to'     => $date_to,
 						'campaign_id' => $link->keitaro_campaign_id,
 						'source_id'   => $link->keitaro_source_id,
+						'grouping'    => 'day',
 					)
 				);
 
@@ -93,41 +101,96 @@ class CP_Sync {
 				}
 
 				foreach ( $rows as $row ) {
-					if ( empty( $row['date'] ) ) {
+					if ( empty( $row['bucket'] ) ) {
 						continue;
 					}
-					$date = $row['date'];
+					$date = $row['bucket'];
 
-					if ( ! isset( $daily[ $date ] ) ) {
-						$daily[ $date ] = array(
-							'clicks'        => 0,
-							'registrations' => 0,
-							'ftd'           => 0,
-							'deposits'      => 0,
-							'revenue'       => 0.0,
-							'roi_sum'       => 0.0,
-							'roi_count'     => 0,
+					CP_DB::upsert_link_stats(
+						$link->id,
+						$client_id,
+						$date,
+						array(
+							'clicks'            => $row['clicks'],
+							'unique_clicks'     => $row['unique_clicks'],
+							'conversions'       => $row['conversions'],
+							'deposits'          => $row['deposits'],
+							'cost'              => $row['cost'],
+							'confirmed_revenue' => $row['confirmed_revenue'],
+							'roi_confirmed'     => $row['roi_confirmed'],
+						)
+					);
+
+					if ( ! isset( $daily_client[ $date ] ) ) {
+						$daily_client[ $date ] = array(
+							'clicks'            => 0,
+							'unique_clicks'     => 0,
+							'conversions'       => 0,
+							'deposits'          => 0,
+							'cost'              => 0.0,
+							'confirmed_revenue' => 0.0,
+							'roi_sum'           => 0.0,
+							'roi_count'         => 0,
 						);
 					}
 
-					$daily[ $date ]['clicks']        += $row['clicks'];
-					$daily[ $date ]['registrations'] += $row['registrations'];
-					$daily[ $date ]['ftd']           += $row['ftd'];
-					$daily[ $date ]['deposits']       += $row['deposits'];
-					$daily[ $date ]['revenue']        += $row['revenue'];
-					$daily[ $date ]['roi_sum']        += $row['roi'];
-					$daily[ $date ]['roi_count']++;
+					$daily_client[ $date ]['clicks']            += $row['clicks'];
+					$daily_client[ $date ]['unique_clicks']     += $row['unique_clicks'];
+					$daily_client[ $date ]['conversions']       += $row['conversions'];
+					$daily_client[ $date ]['deposits']          += $row['deposits'];
+					$daily_client[ $date ]['cost']              += $row['cost'];
+					$daily_client[ $date ]['confirmed_revenue'] += $row['confirmed_revenue'];
+					$daily_client[ $date ]['roi_sum']           += $row['roi_confirmed'];
+					$daily_client[ $date ]['roi_count']++;
 				}
 			}
 
-			foreach ( $daily as $date => $metrics ) {
-				$metrics['roi'] = $metrics['roi_count'] ? round( $metrics['roi_sum'] / $metrics['roi_count'], 2 ) : 0;
+			foreach ( $daily_client as $date => $metrics ) {
+				$metrics['roi_confirmed'] = $metrics['roi_count'] ? round( $metrics['roi_sum'] / $metrics['roi_count'], 2 ) : 0;
 				unset( $metrics['roi_sum'], $metrics['roi_count'] );
 				CP_DB::upsert_stats( $client_id, $date, $metrics );
 			}
 		}
 
 		update_option( 'cp_last_sync_at', current_time( 'mysql' ) );
+	}
+
+	/**
+	 * Підписує прив'язки реальними назвами кампаній з Keitaro (один запит
+	 * get_campaigns() на весь прогін синку, не на кожну прив'язку).
+	 */
+	private function sync_campaign_names( CP_Keitaro_Api $api, $links ) {
+		$needs_names = false;
+		foreach ( $links as $link ) {
+			if ( empty( $link->campaign_name ) && ! empty( $link->keitaro_campaign_id ) ) {
+				$needs_names = true;
+				break;
+			}
+		}
+		if ( ! $needs_names ) {
+			return;
+		}
+
+		$campaigns = $api->get_campaigns();
+		if ( is_wp_error( $campaigns ) || ! is_array( $campaigns ) ) {
+			return;
+		}
+
+		$names_by_id = array();
+		foreach ( $campaigns as $campaign ) {
+			if ( isset( $campaign['id'], $campaign['name'] ) ) {
+				$names_by_id[ (string) $campaign['id'] ] = $campaign['name'];
+			}
+		}
+
+		foreach ( $links as $link ) {
+			if ( ! empty( $link->campaign_name ) || empty( $link->keitaro_campaign_id ) ) {
+				continue;
+			}
+			if ( isset( $names_by_id[ (string) $link->keitaro_campaign_id ] ) ) {
+				CP_DB::update_link_campaign_name( $link->id, $names_by_id[ (string) $link->keitaro_campaign_id ] );
+			}
+		}
 	}
 
 	public function handle_manual_sync() {

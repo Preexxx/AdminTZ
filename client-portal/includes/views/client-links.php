@@ -23,18 +23,20 @@ if ( ! defined( 'ABSPATH' ) ) {
 			<tr>
 				<th>Campaign ID</th>
 				<th>Source ID</th>
-				<th>Назва</th>
+				<th>Назва (Keitaro)</th>
+				<th>Назва (ваша)</th>
 				<th></th>
 			</tr>
 		</thead>
 		<tbody>
 			<?php if ( empty( $links ) ) : ?>
-				<tr><td colspan="4">Поки немає жодної прив’язки.</td></tr>
+				<tr><td colspan="5">Поки немає жодної прив’язки.</td></tr>
 			<?php else : ?>
 				<?php foreach ( $links as $link ) : ?>
 					<tr>
 						<td><?php echo esc_html( $link->keitaro_campaign_id ); ?></td>
 						<td><?php echo esc_html( $link->keitaro_source_id ); ?></td>
+						<td><?php echo $link->campaign_name ? esc_html( $link->campaign_name ) : '<span style="color:#999;">— підтягнеться після синку —</span>'; ?></td>
 						<td><?php echo esc_html( $link->label ); ?></td>
 						<td>
 							<a href="<?php echo esc_url( wp_nonce_url( admin_url( 'admin-post.php?action=cp_delete_link&link_id=' . $link->id ), 'cp_delete_link' ) ); ?>" class="button button-small" onclick="return confirm('Видалити прив’язку?');">Видалити</a>

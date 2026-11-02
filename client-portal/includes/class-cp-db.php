@@ -20,6 +20,11 @@ class CP_DB {
 		return $wpdb->prefix . CP_TABLE_STATS;
 	}
 
+	public static function link_stats_table() {
+		global $wpdb;
+		return $wpdb->prefix . CP_TABLE_LINK_STATS;
+	}
+
 	public static function get_client_by_user_id( $wp_user_id ) {
 		global $wpdb;
 		$table = self::clients_table();
@@ -102,7 +107,21 @@ class CP_DB {
 	}
 
 	/**
-	 * $metrics keys: clicks, registrations, ftd, deposits, revenue, roi.
+	 * Підписує прив'язку реальною назвою кампанії з Keitaro (напр.
+	 * "[G] Stack Block Builder (Tower)"), щоб клієнт бачив у фільтрі
+	 * впізнавану назву, а не голий Campaign ID.
+	 */
+	public static function update_link_campaign_name( $link_id, $campaign_name ) {
+		global $wpdb;
+		$table = self::links_table();
+		return $wpdb->update( $table, array( 'campaign_name' => $campaign_name ), array( 'id' => $link_id ), array( '%s' ), array( '%d' ) );
+	}
+
+	/**
+	 * $metrics keys: clicks, unique_clicks, conversions, deposits, cost,
+	 * confirmed_revenue, roi_confirmed. Це сумарний кеш по клієнту (усі його
+	 * кампанії разом) — читається для фільтра "Усі кампанії" на багатоденних
+	 * періодах.
 	 */
 	public static function upsert_stats( $client_id, $date, $metrics ) {
 		global $wpdb;
@@ -110,17 +129,18 @@ class CP_DB {
 		$existing = $wpdb->get_var( $wpdb->prepare( "SELECT id FROM {$table} WHERE client_id = %d AND stat_date = %s", $client_id, $date ) );
 
 		$data = array(
-			'client_id'     => $client_id,
-			'stat_date'     => $date,
-			'clicks'        => $metrics['clicks'],
-			'registrations' => $metrics['registrations'],
-			'ftd'           => $metrics['ftd'],
-			'deposits'      => $metrics['deposits'],
-			'revenue'       => $metrics['revenue'],
-			'roi'           => $metrics['roi'],
-			'synced_at'     => current_time( 'mysql' ),
+			'client_id'         => $client_id,
+			'stat_date'         => $date,
+			'clicks'            => $metrics['clicks'],
+			'unique_clicks'     => $metrics['unique_clicks'],
+			'conversions'       => $metrics['conversions'],
+			'deposits'          => $metrics['deposits'],
+			'cost'              => $metrics['cost'],
+			'confirmed_revenue' => $metrics['confirmed_revenue'],
+			'roi_confirmed'     => $metrics['roi_confirmed'],
+			'synced_at'         => current_time( 'mysql' ),
 		);
-		$formats = array( '%d', '%s', '%d', '%d', '%d', '%d', '%f', '%f', '%s' );
+		$formats = array( '%d', '%s', '%d', '%d', '%d', '%d', '%f', '%f', '%f', '%s' );
 
 		if ( $existing ) {
 			unset( $data['client_id'], $data['stat_date'] );
@@ -138,6 +158,53 @@ class CP_DB {
 			$wpdb->prepare(
 				"SELECT * FROM {$table} WHERE client_id = %d AND stat_date BETWEEN %s AND %s ORDER BY stat_date ASC",
 				$client_id,
+				$date_from,
+				$date_to
+			)
+		);
+	}
+
+	/**
+	 * Те саме, що upsert_stats(), але per-link кеш — одна кампанія/прив'язка
+	 * окремо, день за днем. Дозволяє клієнту фільтрувати дашборд по одній
+	 * конкретній кампанії на будь-якому періоді, не тільки "сьогодні".
+	 */
+	public static function upsert_link_stats( $link_id, $client_id, $date, $metrics ) {
+		global $wpdb;
+		$table    = self::link_stats_table();
+		$existing = $wpdb->get_var( $wpdb->prepare( "SELECT id FROM {$table} WHERE link_id = %d AND stat_date = %s", $link_id, $date ) );
+
+		$data = array(
+			'link_id'           => $link_id,
+			'client_id'         => $client_id,
+			'stat_date'         => $date,
+			'clicks'            => $metrics['clicks'],
+			'unique_clicks'     => $metrics['unique_clicks'],
+			'conversions'       => $metrics['conversions'],
+			'deposits'          => $metrics['deposits'],
+			'cost'              => $metrics['cost'],
+			'confirmed_revenue' => $metrics['confirmed_revenue'],
+			'roi_confirmed'     => $metrics['roi_confirmed'],
+			'synced_at'         => current_time( 'mysql' ),
+		);
+		$formats = array( '%d', '%d', '%s', '%d', '%d', '%d', '%d', '%f', '%f', '%f', '%s' );
+
+		if ( $existing ) {
+			unset( $data['link_id'], $data['client_id'], $data['stat_date'] );
+			array_splice( $formats, 0, 3 );
+			$wpdb->update( $table, $data, array( 'id' => $existing ), $formats, array( '%d' ) );
+		} else {
+			$wpdb->insert( $table, $data, $formats );
+		}
+	}
+
+	public static function get_link_stats_range( $link_id, $date_from, $date_to ) {
+		global $wpdb;
+		$table = self::link_stats_table();
+		return $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT * FROM {$table} WHERE link_id = %d AND stat_date BETWEEN %s AND %s ORDER BY stat_date ASC",
+				$link_id,
 				$date_from,
 				$date_to
 			)

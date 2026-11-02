@@ -9,6 +9,7 @@ class CP_Activator {
 		self::create_tables();
 		CP_Roles::add_roles();
 		CP_Sync::schedule_event();
+		update_option( 'cp_db_version', CP_DB_VERSION );
 		flush_rewrite_rules();
 	}
 
@@ -17,14 +18,30 @@ class CP_Activator {
 		flush_rewrite_rules();
 	}
 
+	/**
+	 * Застосовує міграції схеми на вже активному сайті (без повторної
+	 * активації плагіна) — порівнює збережену версію БД із поточною і за
+	 * потреби повторно проганяє create_tables(). dbDelta() ідемпотентний:
+	 * для існуючих таблиць він лише додає відсутні колонки/ключі, нічого не
+	 * видаляє і не чіпає наявні дані.
+	 */
+	public static function maybe_upgrade() {
+		if ( get_option( 'cp_db_version' ) === CP_DB_VERSION ) {
+			return;
+		}
+		self::create_tables();
+		update_option( 'cp_db_version', CP_DB_VERSION );
+	}
+
 	private static function create_tables() {
 		global $wpdb;
 		require_once ABSPATH . 'wp-admin/includes/upgrade.php';
 		$charset_collate = $wpdb->get_charset_collate();
 
-		$clients_table = $wpdb->prefix . CP_TABLE_CLIENTS;
-		$links_table   = $wpdb->prefix . CP_TABLE_LINKS;
-		$stats_table   = $wpdb->prefix . CP_TABLE_STATS;
+		$clients_table    = $wpdb->prefix . CP_TABLE_CLIENTS;
+		$links_table      = $wpdb->prefix . CP_TABLE_LINKS;
+		$stats_table      = $wpdb->prefix . CP_TABLE_STATS;
+		$link_stats_table = $wpdb->prefix . CP_TABLE_LINK_STATS;
 
 		$sql = "CREATE TABLE {$clients_table} (
 			id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -42,6 +59,7 @@ class CP_Activator {
 			keitaro_campaign_id VARCHAR(64) NOT NULL DEFAULT '',
 			keitaro_source_id VARCHAR(64) NOT NULL DEFAULT '',
 			label VARCHAR(191) NOT NULL DEFAULT '',
+			campaign_name VARCHAR(191) NOT NULL DEFAULT '',
 			created_at DATETIME NOT NULL,
 			PRIMARY KEY  (id),
 			KEY client_id (client_id)
@@ -57,9 +75,32 @@ class CP_Activator {
 			deposits BIGINT UNSIGNED NOT NULL DEFAULT 0,
 			revenue DECIMAL(14,2) NOT NULL DEFAULT 0,
 			roi DECIMAL(10,2) NOT NULL DEFAULT 0,
+			unique_clicks BIGINT UNSIGNED NOT NULL DEFAULT 0,
+			conversions BIGINT UNSIGNED NOT NULL DEFAULT 0,
+			cost DECIMAL(14,4) NOT NULL DEFAULT 0,
+			confirmed_revenue DECIMAL(14,2) NOT NULL DEFAULT 0,
+			roi_confirmed DECIMAL(10,2) NOT NULL DEFAULT 0,
 			synced_at DATETIME NOT NULL,
 			PRIMARY KEY  (id),
 			UNIQUE KEY client_date (client_id, stat_date)
+		) {$charset_collate};
+
+		CREATE TABLE {$link_stats_table} (
+			id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+			link_id BIGINT UNSIGNED NOT NULL,
+			client_id BIGINT UNSIGNED NOT NULL,
+			stat_date DATE NOT NULL,
+			clicks BIGINT UNSIGNED NOT NULL DEFAULT 0,
+			unique_clicks BIGINT UNSIGNED NOT NULL DEFAULT 0,
+			conversions BIGINT UNSIGNED NOT NULL DEFAULT 0,
+			deposits BIGINT UNSIGNED NOT NULL DEFAULT 0,
+			cost DECIMAL(14,4) NOT NULL DEFAULT 0,
+			confirmed_revenue DECIMAL(14,2) NOT NULL DEFAULT 0,
+			roi_confirmed DECIMAL(10,2) NOT NULL DEFAULT 0,
+			synced_at DATETIME NOT NULL,
+			PRIMARY KEY  (id),
+			UNIQUE KEY link_date (link_id, stat_date),
+			KEY client_id (client_id)
 		) {$charset_collate};";
 
 		dbDelta( $sql );

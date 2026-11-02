@@ -8,23 +8,36 @@ if ( ! defined( 'ABSPATH' ) ) {
  *
  * Шляхи та назви полів нижче звірені напряму з реальним інстансом клієнта
  * (`/admin_api/v1/campaigns`, `/admin_api/v1/report/build`, Api-Key header) —
- * підтверджено робочим тестовим запитом 2026-10-29. Повний список валідних
- * колонок/метрик звіту "events" на цьому інстансі: clicks, regs, leads, sales,
- * deposits, revenue, sale_revenue, lead_revenue, deposit_revenue, reg_revenue,
- * roi, profit (та інші — див. помилку API при невірній назві колонки, вона
- * повертає повний список).
+ * підтверджено робочими тестовими запитами 2026-10-29 і 2026-11-02.
  *
- * НЕ ПІДТВЕРДЖЕНО: окремого поля для FTD (перший депозит окремо від повторних)
- * у списку немає — є лише загальний `deposits`. На тестовому акаунті конверсій
- * ще не було, тож fallback 'ftd' => 'deposits' нижче не перевірений на реальних
- * цифрах і потребує підтвердження клієнта, як саме рахувати FTD окремо від
- * повторних депозитів (можливо через окремий статус постбеку).
+ * Повний список валідних колонок/метрик звіту "events" (взято напряму з
+ * помилки валідації API, 2026-11-02): ... clicks, visitors,
+ * campaign_unique_clicks, stream_unique_clicks, global_unique_clicks, ...
+ * conversions, ... revenue, ... profit, ... roi, ... deposits, regs,
+ * reg_revenue, deposit_revenue, ... cost, ... confirmed_count,
+ * confirmed_revenue, ... roi_confirmed, ... hour, day_hour, day ... (та інші).
+ *
+ * Метрики нижче (METRICS) звірені живим запитом на кампанії campaign_id=16 і
+ * дають саме ті цифри, що показує власний дашборд Keitaro клієнта (картки
+ * "Клики / Уник. (кампанія) / Конв. / Депозити / Расход / Доход (подтв.) /
+ * ROI (подтв.)"). `day_hour` (формат відповіді: рядок "YYYYMMDDHH") теж
+ * підтверджено робочим запитом — дає погодинну розбивку всередині одного дня.
  */
 class CP_Keitaro_Api {
 
 	const ENDPOINT_CAMPAIGNS = '/admin_api/v1/campaigns';
 	const ENDPOINT_SOURCES   = '/admin_api/v1/traffic_sources';
 	const ENDPOINT_REPORT    = '/admin_api/v1/report/build';
+
+	const METRICS = array(
+		'clicks',
+		'campaign_unique_clicks',
+		'conversions',
+		'deposits',
+		'cost',
+		'confirmed_revenue',
+		'roi_confirmed',
+	);
 
 	private $base_url;
 	private $api_key;
@@ -42,6 +55,11 @@ class CP_Keitaro_Api {
 		return $this->request( 'GET', self::ENDPOINT_CAMPAIGNS );
 	}
 
+	/**
+	 * Повертає сирий список кампаній Keitaro (з реальними назвами на кшталт
+	 * "[G] Stack Block Builder (Tower)") або WP_Error. Використовується, щоб
+	 * підписати прив'язки клієнта людяними назвами замість голих ID.
+	 */
 	public function get_campaigns() {
 		return $this->request( 'GET', self::ENDPOINT_CAMPAIGNS );
 	}
@@ -51,10 +69,14 @@ class CP_Keitaro_Api {
 	}
 
 	/**
-	 * $params: date_from, date_to (Y-m-d), campaign_id, source_id.
-	 * Повертає масив рядків звіту по днях або WP_Error.
+	 * $params: date_from, date_to (Y-m-d), campaign_id, source_id,
+	 * grouping ('day' за замовчуванням, або 'day_hour' для погодинної
+	 * розбивки — має сенс лише в межах одного календарного дня).
+	 * Повертає масив рядків звіту (по днях або по годинах) або WP_Error.
 	 */
 	public function build_report( $params ) {
+		$grouping = ( isset( $params['grouping'] ) && 'day_hour' === $params['grouping'] ) ? 'day_hour' : 'day';
+
 		$body = array(
 			'range'    => array(
 				'from'     => $params['date_from'] . ' 00:00:00',
@@ -62,8 +84,8 @@ class CP_Keitaro_Api {
 				'timezone' => wp_timezone_string(),
 			),
 			'columns'  => array( 'campaign_id', 'ts_id' ),
-			'metrics'  => array( 'clicks', 'regs', 'deposits', 'revenue', 'roi' ),
-			'grouping' => array( 'day' ),
+			'metrics'  => self::METRICS,
+			'grouping' => array( $grouping ),
 			'filters'  => array(),
 		);
 
@@ -89,25 +111,31 @@ class CP_Keitaro_Api {
 			return $response;
 		}
 
-		return $this->map_report_rows( $response );
+		return $this->map_report_rows( $response, $grouping );
 	}
 
-	private function map_report_rows( $raw ) {
+	private function map_report_rows( $raw, $grouping = 'day' ) {
 		$rows   = isset( $raw['rows'] ) ? $raw['rows'] : array();
 		$mapped = array();
 
 		foreach ( $rows as $row ) {
+			$bucket = ( 'day_hour' === $grouping )
+				? ( isset( $row['day_hour'] ) ? $row['day_hour'] : null )
+				: ( isset( $row['day'] ) ? $row['day'] : null );
+
+			if ( ! $bucket ) {
+				continue;
+			}
+
 			$mapped[] = array(
-				'date'          => isset( $row['day'] ) ? $row['day'] : null,
-				'clicks'        => isset( $row['clicks'] ) ? (int) $row['clicks'] : 0,
-				'registrations' => isset( $row['regs'] ) ? (int) $row['regs'] : 0,
-				// FTD не підтверджено окремим полем — тимчасово дорівнює deposits,
-				// див. коментар класу вище. Виправити, коли клієнт підтвердить
-				// логіку розрізнення FTD від повторних депозитів.
-				'ftd'           => isset( $row['deposits'] ) ? (int) $row['deposits'] : 0,
-				'deposits'      => isset( $row['deposits'] ) ? (int) $row['deposits'] : 0,
-				'revenue'       => isset( $row['revenue'] ) ? (float) $row['revenue'] : 0,
-				'roi'           => isset( $row['roi'] ) ? (float) $row['roi'] : 0,
+				'bucket'            => $bucket,
+				'clicks'            => isset( $row['clicks'] ) ? (int) $row['clicks'] : 0,
+				'unique_clicks'     => isset( $row['campaign_unique_clicks'] ) ? (int) $row['campaign_unique_clicks'] : 0,
+				'conversions'       => isset( $row['conversions'] ) ? (int) $row['conversions'] : 0,
+				'deposits'          => isset( $row['deposits'] ) ? (int) $row['deposits'] : 0,
+				'cost'              => isset( $row['cost'] ) ? (float) $row['cost'] : 0.0,
+				'confirmed_revenue' => isset( $row['confirmed_revenue'] ) ? (float) $row['confirmed_revenue'] : 0.0,
+				'roi_confirmed'     => isset( $row['roi_confirmed'] ) ? (float) $row['roi_confirmed'] : 0.0,
 			);
 		}
 

@@ -80,33 +80,60 @@ class CP_Dashboard {
 		}
 
 		wp_enqueue_style( 'cp-dashboard', CP_PLUGIN_URL . 'assets/css/dashboard.css', array(), CP_VERSION );
-		wp_enqueue_script( 'cp-dashboard', CP_PLUGIN_URL . 'assets/js/dashboard.js', array(), CP_VERSION, true );
+		wp_enqueue_script( 'cp-chartjs', CP_PLUGIN_URL . 'assets/js/vendor/chart.umd.min.js', array(), CP_VERSION, true );
+		wp_enqueue_script( 'cp-dashboard', CP_PLUGIN_URL . 'assets/js/dashboard.js', array( 'cp-chartjs' ), CP_VERSION, true );
 		wp_localize_script(
 			'cp-dashboard',
 			'cpDashboardConfig',
 			array(
-				'restUrl' => esc_url_raw( rest_url( 'cp/v1/stats' ) ),
-				'nonce'   => wp_create_nonce( 'wp_rest' ),
+				'statsUrl'     => esc_url_raw( rest_url( 'cp/v1/stats' ) ),
+				'campaignsUrl' => esc_url_raw( rest_url( 'cp/v1/campaigns' ) ),
+				'nonce'        => wp_create_nonce( 'wp_rest' ),
 			)
 		);
 
 		ob_start();
 		?>
 		<div id="cp-dashboard-root" class="cp-dashboard">
-			<div class="cp-dashboard__filters">
-				<label>З <input type="date" id="cp-date-from" /></label>
-				<label>По <input type="date" id="cp-date-to" /></label>
-				<button type="button" id="cp-apply-filter" class="button">Застосувати</button>
+			<div class="cp-dashboard__topbar">
+				<h2 class="cp-dashboard__title">Дашборд</h2>
+				<div class="cp-dashboard__controls">
+					<select id="cp-campaign-select" class="cp-select"><option value="">Усі кампанії</option></select>
+					<select id="cp-range-select" class="cp-select">
+						<option value="today">Сьогодні</option>
+						<option value="yesterday">Вчора</option>
+						<option value="this_week">Поточний тиждень</option>
+						<option value="last_7_days" selected>Останні 7 днів</option>
+						<option value="this_month">Поточний місяць</option>
+						<option value="last_30_days">Останні 30 днів</option>
+						<option value="last_month">Попередній місяць</option>
+						<option value="custom">Інтервал дат</option>
+					</select>
+					<span id="cp-custom-range" class="cp-custom-range" hidden>
+						<input type="date" id="cp-date-from" />
+						<input type="date" id="cp-date-to" />
+					</span>
+					<button type="button" id="cp-refresh" class="cp-icon-btn" title="Оновити" aria-label="Оновити">&#8635;</button>
+					<button type="button" id="cp-settings-toggle" class="cp-icon-btn" title="Налаштування" aria-label="Налаштування">&#9881;</button>
+				</div>
 			</div>
-			<div class="cp-dashboard__cards" id="cp-dashboard-cards">
-				<p>Завантаження...</p>
-			</div>
-			<div class="cp-dashboard__cost">
-				<label><input type="checkbox" id="cp-cost-toggle" /> Внести власні витрати (якщо немає даних у Keitaro)</label>
+
+			<div class="cp-dashboard__settings" id="cp-settings-panel" hidden>
+				<label><input type="checkbox" id="cp-cost-toggle" /> Внести власні витрати (якщо Keitaro ще не рахує вартість трафіку)</label>
 				<span id="cp-cost-fields" hidden>
-					<input type="number" step="0.01" min="0" id="cp-cost-input" placeholder="Сума витрат" />
-					<button type="button" id="cp-cost-apply" class="button button-small">OK</button>
+					<input type="number" step="0.01" min="0" id="cp-cost-input" placeholder="Сума витрат, $" />
+					<button type="button" id="cp-cost-apply" class="button button-small">Застосувати</button>
 				</span>
+			</div>
+
+			<p id="cp-dashboard-note" class="cp-dashboard__note" hidden></p>
+
+			<div class="cp-dashboard__cards" id="cp-dashboard-cards">
+				<p class="cp-dashboard__loading">Завантаження...</p>
+			</div>
+
+			<div class="cp-dashboard__chart-wrap">
+				<canvas id="cp-dashboard-chart" height="110"></canvas>
 			</div>
 		</div>
 		<?php
