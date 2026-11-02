@@ -94,7 +94,7 @@ class CP_Dashboard {
 
 		ob_start();
 		?>
-		<div id="cp-dashboard-root" class="cp-dashboard">
+		<div id="cp-dashboard-root" class="cp-dashboard alignwide">
 			<div class="cp-dashboard__topbar">
 				<h2 class="cp-dashboard__title">Дашборд</h2>
 				<div class="cp-dashboard__controls">
