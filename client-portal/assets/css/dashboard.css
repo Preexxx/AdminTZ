@@ -2,6 +2,14 @@
 	max-width: 1100px;
 }
 
+/* Author display:flex/inline-flex rules below outrank the UA [hidden]
+   default regardless of selector specificity (author CSS always beats
+   user-agent CSS) — without this, toggling the hidden attribute on
+   .cp-custom-range / .cp-dashboard__settings would have no visible effect. */
+.cp-dashboard [hidden] {
+	display: none !important;
+}
+
 .cp-dashboard__topbar {
 	display: flex;
 	align-items: center;
