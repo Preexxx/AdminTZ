@@ -135,7 +135,7 @@ class CP_Dashboard {
 		?>
 		<div id="cp-dashboard-root" class="cp-dashboard alignwide">
 			<div class="cp-dashboard__topbar">
-				<h2 class="cp-dashboard__title">Дашборд</h2>
+				<h2 class="cp-dashboard__title">Дашборд <span class="cp-dashboard__client-name"><?php echo esc_html( $client->display_name ); ?></span></h2>
 				<div class="cp-dashboard__controls">
 					<select id="cp-campaign-select" class="cp-select"><option value="">Усі кампанії</option></select>
 					<select id="cp-range-select" class="cp-select">

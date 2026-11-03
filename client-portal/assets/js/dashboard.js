@@ -143,7 +143,7 @@
 		var params = {};
 
 		if ( campaignSelect.value ) {
-			params.link_id = campaignSelect.value;
+			params.campaign_id = campaignSelect.value;
 		}
 
 		if ( 'custom' === rangeSelect.value ) {
@@ -179,7 +179,7 @@
 		apiGet( cpDashboardConfig.campaignsUrl, {} ).then( function ( items ) {
 			items.forEach( function ( item ) {
 				var opt = document.createElement( 'option' );
-				opt.value = item.link_id;
+				opt.value = item.campaign_id;
 				opt.textContent = item.name;
 				campaignSelect.appendChild( opt );
 			} );

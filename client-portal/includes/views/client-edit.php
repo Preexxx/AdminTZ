@@ -3,9 +3,11 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-$cp_api               = new CP_Keitaro_Api();
-$cp_campaign_options   = $cp_api->is_configured() ? $cp_api->get_campaign_options() : array();
-$cp_source_options     = $cp_api->is_configured() ? $cp_api->get_source_options() : array();
+$cp_api                 = new CP_Keitaro_Api();
+$cp_configured          = $cp_api->is_configured();
+$cp_campaign_options    = $cp_configured ? $cp_api->get_campaign_options() : array();
+$cp_source_options      = $cp_configured ? $cp_api->get_source_options() : array();
+$cp_streams_by_campaign = $cp_configured ? $cp_api->get_all_stream_options() : array();
 ?>
 <div class="wrap">
 	<h1>Додати клієнта</h1>
@@ -42,18 +44,30 @@ $cp_source_options     = $cp_api->is_configured() ? $cp_api->get_source_options(
 				</td>
 			</tr>
 			<tr>
-				<th><label for="cp_source_id">Keitaro Source</label></th>
+				<th><label for="cp_stream_id">Keitaro Stream (потік клієнта)</label></th>
+				<td>
+					<?php if ( ! empty( $cp_campaign_options ) ) : ?>
+						<select id="cp_stream_id" name="cp_stream_id" class="regular-text">
+							<option value="">— спершу оберіть кампанію —</option>
+						</select>
+						<p class="description">Саме потік визначає, яку частину трафіку цієї кампанії побачить клієнт — не Source.</p>
+					<?php else : ?>
+						<input type="text" id="cp_stream_id" name="cp_stream_id" class="regular-text" placeholder="Stream ID" />
+					<?php endif; ?>
+				</td>
+			</tr>
+			<tr>
+				<th><label for="cp_source_id">Keitaro Source (опційно)</label></th>
 				<td>
 					<?php if ( ! empty( $cp_source_options ) ) : ?>
 						<select id="cp_source_id" name="cp_source_id" class="regular-text">
-							<option value="">— усі джерела —</option>
+							<option value="">— не фільтрувати за джерелом —</option>
 							<?php foreach ( $cp_source_options as $cp_id => $cp_name ) : ?>
 								<option value="<?php echo esc_attr( $cp_id ); ?>"><?php echo esc_html( $cp_name ); ?> (#<?php echo esc_html( $cp_id ); ?>)</option>
 							<?php endforeach; ?>
 						</select>
 					<?php else : ?>
 						<input type="text" id="cp_source_id" name="cp_source_id" class="regular-text" placeholder="Source ID" />
-						<p class="description">Не вдалось завантажити список джерел із Keitaro — вкажіть ID вручну.</p>
 					<?php endif; ?>
 				</td>
 			</tr>
@@ -66,3 +80,32 @@ $cp_source_options     = $cp_api->is_configured() ? $cp_api->get_source_options(
 		<?php submit_button( 'Створити клієнта' ); ?>
 	</form>
 </div>
+
+<?php if ( ! empty( $cp_campaign_options ) ) : ?>
+<script>
+( function () {
+	var streamsByCampaign = <?php echo wp_json_encode( $cp_streams_by_campaign ); ?>;
+	var campaignEl = document.getElementById( 'cp_campaign_id' );
+	var streamEl = document.getElementById( 'cp_stream_id' );
+	if ( ! campaignEl || ! streamEl ) {
+		return;
+	}
+
+	function renderStreams( campaignId ) {
+		var streams = streamsByCampaign[ campaignId ] || {};
+		var html = campaignId
+			? '<option value="">— усі потоки кампанії —</option>'
+			: '<option value="">— спершу оберіть кампанію —</option>';
+		Object.keys( streams ).forEach( function ( id ) {
+			html += '<option value="' + id + '">' + streams[ id ] + ' (#' + id + ')</option>';
+		} );
+		streamEl.innerHTML = html;
+	}
+
+	campaignEl.addEventListener( 'change', function () {
+		renderStreams( campaignEl.value );
+	} );
+	renderStreams( campaignEl.value );
+} )();
+</script>
+<?php endif; ?>

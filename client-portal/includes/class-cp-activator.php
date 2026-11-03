@@ -57,6 +57,7 @@ class CP_Activator {
 			id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
 			client_id BIGINT UNSIGNED NOT NULL,
 			keitaro_campaign_id VARCHAR(64) NOT NULL DEFAULT '',
+			keitaro_stream_id VARCHAR(64) NOT NULL DEFAULT '',
 			keitaro_source_id VARCHAR(64) NOT NULL DEFAULT '',
 			label VARCHAR(191) NOT NULL DEFAULT '',
 			campaign_name VARCHAR(191) NOT NULL DEFAULT '',

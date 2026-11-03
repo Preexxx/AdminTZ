@@ -83,7 +83,7 @@ class CP_DB {
 		return $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$table} WHERE id = %d", $link_id ) );
 	}
 
-	public static function add_link( $client_id, $campaign_id, $source_id, $label ) {
+	public static function add_link( $client_id, $campaign_id, $stream_id, $source_id, $label ) {
 		global $wpdb;
 		$table = self::links_table();
 		$wpdb->insert(
@@ -91,11 +91,12 @@ class CP_DB {
 			array(
 				'client_id'           => $client_id,
 				'keitaro_campaign_id' => $campaign_id,
+				'keitaro_stream_id'   => $stream_id,
 				'keitaro_source_id'   => $source_id,
 				'label'               => $label,
 				'created_at'          => current_time( 'mysql' ),
 			),
-			array( '%d', '%s', '%s', '%s', '%s' )
+			array( '%d', '%s', '%s', '%s', '%s', '%s' )
 		);
 		return $wpdb->insert_id;
 	}
@@ -205,6 +206,55 @@ class CP_DB {
 			$wpdb->prepare(
 				"SELECT * FROM {$table} WHERE link_id = %d AND stat_date BETWEEN %s AND %s ORDER BY stat_date ASC",
 				$link_id,
+				$date_from,
+				$date_to
+			)
+		);
+	}
+
+	/**
+	 * Усі прив'язки клієнта до однієї кампанії — клієнту можна пошарити
+	 * кілька потоків однієї гри, тож одна "кампанія" в його кабінеті
+	 * фактично може відповідати кільком рядкам wp_cp_links.
+	 */
+	public static function get_links_for_client_campaign( $client_id, $campaign_id ) {
+		global $wpdb;
+		$table = self::links_table();
+		return $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT * FROM {$table} WHERE client_id = %d AND keitaro_campaign_id = %s",
+				$client_id,
+				$campaign_id
+			)
+		);
+	}
+
+	/**
+	 * Те саме, що get_link_stats_range(), але підсумовано по всіх потоках,
+	 * які пошарені цьому клієнту в межах однієї кампанії (JOIN на wp_cp_links,
+	 * щоб не ходити по кожному link_id окремим запитом).
+	 */
+	public static function get_campaign_stats_range( $client_id, $campaign_id, $date_from, $date_to ) {
+		global $wpdb;
+		$links_table = self::links_table();
+		$stats_table = self::link_stats_table();
+		return $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT ls.stat_date,
+					SUM(ls.clicks) AS clicks,
+					SUM(ls.unique_clicks) AS unique_clicks,
+					SUM(ls.conversions) AS conversions,
+					SUM(ls.deposits) AS deposits,
+					SUM(ls.cost) AS cost,
+					SUM(ls.confirmed_revenue) AS confirmed_revenue,
+					AVG(ls.roi_confirmed) AS roi_confirmed
+				FROM {$stats_table} ls
+				JOIN {$links_table} l ON l.id = ls.link_id
+				WHERE l.client_id = %d AND l.keitaro_campaign_id = %s AND ls.stat_date BETWEEN %s AND %s
+				GROUP BY ls.stat_date
+				ORDER BY ls.stat_date ASC",
+				$client_id,
+				$campaign_id,
 				$date_from,
 				$date_to
 			)

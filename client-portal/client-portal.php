@@ -14,7 +14,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 define( 'CP_VERSION', '0.2.0' );
 // Версія схеми БД — окремо від CP_VERSION, бо міграції мають застосуватись і
 // без повторної активації плагіна (сайт уже live). Див. CP_Activator::maybe_upgrade().
-define( 'CP_DB_VERSION', '2' );
+define( 'CP_DB_VERSION', '3' );
 define( 'CP_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'CP_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
 define( 'CP_TABLE_CLIENTS', 'cp_clients' );

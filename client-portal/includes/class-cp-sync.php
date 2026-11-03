@@ -98,6 +98,7 @@ class CP_Sync {
 						'date_from'   => $date_from,
 						'date_to'     => $date_to,
 						'campaign_id' => $link->keitaro_campaign_id,
+						'stream_id'   => $link->keitaro_stream_id,
 						'source_id'   => $link->keitaro_source_id,
 						'grouping'    => 'day',
 					)

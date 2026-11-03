@@ -140,6 +140,7 @@ class CP_Admin {
 		$email       = sanitize_email( wp_unslash( $_POST['cp_email'] ?? '' ) );
 		$password    = wp_unslash( $_POST['cp_password'] ?? '' );
 		$campaign_id = sanitize_text_field( wp_unslash( $_POST['cp_campaign_id'] ?? '' ) );
+		$stream_id   = sanitize_text_field( wp_unslash( $_POST['cp_stream_id'] ?? '' ) );
 		$source_id   = sanitize_text_field( wp_unslash( $_POST['cp_source_id'] ?? '' ) );
 		$label       = sanitize_text_field( wp_unslash( $_POST['cp_link_label'] ?? '' ) );
 
@@ -161,8 +162,8 @@ class CP_Admin {
 
 		$client_id = CP_DB::insert_client( $user_id, $login );
 
-		if ( ! empty( $campaign_id ) || ! empty( $source_id ) ) {
-			CP_DB::add_link( $client_id, $campaign_id, $source_id, $label );
+		if ( ! empty( $campaign_id ) || ! empty( $stream_id ) || ! empty( $source_id ) ) {
+			CP_DB::add_link( $client_id, $campaign_id, $stream_id, $source_id, $label );
 		}
 
 		$this->store_password_for_display( $client_id, $login, $password );
@@ -240,17 +241,18 @@ class CP_Admin {
 
 		$client_id   = (int) ( $_POST['client_id'] ?? 0 );
 		$campaign_id = sanitize_text_field( wp_unslash( $_POST['cp_campaign_id'] ?? '' ) );
+		$stream_id   = sanitize_text_field( wp_unslash( $_POST['cp_stream_id'] ?? '' ) );
 		$source_id   = sanitize_text_field( wp_unslash( $_POST['cp_source_id'] ?? '' ) );
 		$label       = sanitize_text_field( wp_unslash( $_POST['cp_link_label'] ?? '' ) );
 
 		if ( ! CP_DB::get_client( $client_id ) ) {
 			wp_die( 'Клієнта не знайдено.' );
 		}
-		if ( empty( $campaign_id ) && empty( $source_id ) ) {
-			wp_die( 'Вкажіть Campaign ID або Source ID.' );
+		if ( empty( $campaign_id ) && empty( $stream_id ) && empty( $source_id ) ) {
+			wp_die( 'Вкажіть принаймні кампанію або потік.' );
 		}
 
-		CP_DB::add_link( $client_id, $campaign_id, $source_id, $label );
+		CP_DB::add_link( $client_id, $campaign_id, $stream_id, $source_id, $label );
 
 		wp_safe_redirect(
 			add_query_arg(

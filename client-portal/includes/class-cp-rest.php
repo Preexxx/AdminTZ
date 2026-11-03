@@ -27,10 +27,10 @@ class CP_Rest {
 				'callback'            => array( $this, 'get_stats' ),
 				'permission_callback' => array( $this, 'check_permission' ),
 				'args'                => array(
-					'date_from' => array( 'sanitize_callback' => 'sanitize_text_field' ),
-					'date_to'   => array( 'sanitize_callback' => 'sanitize_text_field' ),
-					'preset'    => array( 'sanitize_callback' => 'sanitize_key' ),
-					'link_id'   => array( 'sanitize_callback' => 'absint' ),
+					'date_from'   => array( 'sanitize_callback' => 'sanitize_text_field' ),
+					'date_to'     => array( 'sanitize_callback' => 'sanitize_text_field' ),
+					'preset'      => array( 'sanitize_callback' => 'sanitize_key' ),
+					'campaign_id' => array( 'sanitize_callback' => 'sanitize_text_field' ),
 				),
 			)
 		);
@@ -51,8 +51,11 @@ class CP_Rest {
 	}
 
 	/**
-	 * Список кампаній/прив'язок поточного клієнта для випадаючого списку —
-	 * client_id, як і в /stats, береться виключно з сесії.
+	 * Список кампаній для випадаючого списку клієнта — згруповано по
+	 * campaign_id, а не по окремих прив'язках: клієнту можна пошарити кілька
+	 * потоків однієї гри, і в його кабінеті це має бути один пункт "гра", а
+	 * не дублікат назви на кожен потік. client_id, як і в /stats, береться
+	 * виключно з сесії.
 	 */
 	public function get_campaigns() {
 		$client = CP_DB::get_client_by_user_id( get_current_user_id() );
@@ -63,35 +66,36 @@ class CP_Rest {
 			return new WP_Error( 'cp_client_blocked', 'Акаунт заблоковано.', array( 'status' => 403 ) );
 		}
 
-		$links = CP_DB::get_links_for_client( $client->id );
-		$items = array();
+		$links     = CP_DB::get_links_for_client( $client->id );
+		$campaigns = array();
 
 		foreach ( $links as $link ) {
+			$campaign_id = $link->keitaro_campaign_id;
+			if ( empty( $campaign_id ) || isset( $campaigns[ $campaign_id ] ) ) {
+				continue;
+			}
+
 			$name = $link->campaign_name;
 			if ( empty( $name ) ) {
 				$name = $link->label;
 			}
 			if ( empty( $name ) ) {
-				$name = $link->keitaro_campaign_id
-					? sprintf( 'Campaign #%s', $link->keitaro_campaign_id )
-					: sprintf( 'Source #%s', $link->keitaro_source_id );
+				$name = sprintf( 'Campaign #%s', $campaign_id );
 			}
 
-			$items[] = array(
-				'link_id'     => (int) $link->id,
+			$campaigns[ $campaign_id ] = array(
+				'campaign_id' => $campaign_id,
 				'name'        => $name,
-				'campaign_id' => $link->keitaro_campaign_id,
-				'source_id'   => $link->keitaro_source_id,
 			);
 		}
 
-		return rest_ensure_response( $items );
+		return rest_ensure_response( array_values( $campaigns ) );
 	}
 
 	/**
-	 * client_id і list прив'язок виводяться виключно з поточного залогіненого
-	 * користувача — ніколи з параметрів запиту, щоб один клієнт не міг
-	 * запросити дані іншого чи чужий link_id.
+	 * client_id і перелік прив'язок, що відповідають кампанії, виводяться
+	 * виключно з поточного залогіненого користувача — ніколи з параметрів
+	 * запиту, щоб один клієнт не міг запросити дані іншого чи чужу кампанію.
 	 */
 	public function get_stats( WP_REST_Request $request ) {
 		$client = CP_DB::get_client_by_user_id( get_current_user_id() );
@@ -103,12 +107,12 @@ class CP_Rest {
 			return new WP_Error( 'cp_client_blocked', 'Акаунт заблоковано.', array( 'status' => 403 ) );
 		}
 
-		$link    = null;
-		$link_id = (int) $request->get_param( 'link_id' );
-		if ( $link_id ) {
-			$link = CP_DB::get_link( $link_id );
-			if ( ! $link || (int) $link->client_id !== (int) $client->id ) {
-				return new WP_Error( 'cp_invalid_link', 'Кампанію не знайдено.', array( 'status' => 403 ) );
+		$links       = null;
+		$campaign_id = $request->get_param( 'campaign_id' );
+		if ( $campaign_id ) {
+			$links = CP_DB::get_links_for_client_campaign( $client->id, $campaign_id );
+			if ( empty( $links ) ) {
+				return new WP_Error( 'cp_invalid_campaign', 'Кампанію не знайдено.', array( 'status' => 403 ) );
 			}
 		}
 
@@ -119,8 +123,8 @@ class CP_Rest {
 		}
 
 		$result = ( $date_from === $date_to )
-			? $this->get_hourly_series( $client, $link, $date_from )
-			: $this->get_daily_series( $client, $link, $date_from, $date_to );
+			? $this->get_hourly_series( $client, $links, $date_from )
+			: $this->get_daily_series( $client, $campaign_id, $date_from, $date_to );
 
 		$result['date_from'] = $date_from;
 		$result['date_to']   = $date_to;
@@ -176,22 +180,21 @@ class CP_Rest {
 	 * Один календарний день: йдемо в Keitaro наживо з погодинним
 	 * групуванням (день — замалий проміжок, щоб тримати в кеші окремою
 	 * гранулярністю, і клієнт і так очікує тут майже реальний час — поруч є
-	 * кнопка "Оновити"). Якщо кампанію не вибрано — підсумовуємо по
-	 * годинах усі кампанії клієнта, так само як це робить нічний синк для
-	 * денного кешу. Якщо Keitaro недоступна — відкочуємось на денний кеш за
-	 * цю саму дату, щоб кабінет не зламався (source: 'cache_fallback').
+	 * кнопка "Оновити"). $links — null, якщо кампанію не вибрано (сумуємо по
+	 * годинах усі прив'язки клієнта, так само як це робить нічний синк для
+	 * денного кешу), або масив прив'язок ОДНІЄЇ кампанії (можливо кілька —
+	 * клієнту може бути пошарено кілька потоків однієї гри, їх теж сумуємо).
+	 * Якщо Keitaro недоступна — відкочуємось на денний кеш за цю саму дату,
+	 * щоб кабінет не зламався (source: 'cache_fallback').
 	 */
-	private function get_hourly_series( $client, $link, $date ) {
+	private function get_hourly_series( $client, $links, $date ) {
 		$api = new CP_Keitaro_Api();
 
 		if ( $api->is_configured() ) {
-			$queries = array();
-			if ( $link ) {
-				$queries[] = array( $link->keitaro_campaign_id, $link->keitaro_source_id );
-			} else {
-				foreach ( CP_DB::get_links_for_client( $client->id ) as $l ) {
-					$queries[] = array( $l->keitaro_campaign_id, $l->keitaro_source_id );
-				}
+			$source_links = null !== $links ? $links : CP_DB::get_links_for_client( $client->id );
+			$queries      = array();
+			foreach ( $source_links as $l ) {
+				$queries[] = array( $l->keitaro_campaign_id, $l->keitaro_stream_id, $l->keitaro_source_id );
 			}
 
 			if ( ! empty( $queries ) ) {
@@ -206,7 +209,8 @@ class CP_Rest {
 							'date_from'   => $date,
 							'date_to'     => $date,
 							'campaign_id' => $q[0],
-							'source_id'   => $q[1],
+							'stream_id'   => $q[1],
+							'source_id'   => $q[2],
 							'grouping'    => 'day_hour',
 						)
 					);
@@ -252,20 +256,22 @@ class CP_Rest {
 			}
 		}
 
-		$fallback                = $this->get_daily_series( $client, $link, $date, $date );
+		$fallback_campaign_id    = ! empty( $links ) ? $links[0]->keitaro_campaign_id : null;
+		$fallback                = $this->get_daily_series( $client, $fallback_campaign_id, $date, $date );
 		$fallback['granularity'] = 'hour';
 		$fallback['source']      = 'cache_fallback';
 		return $fallback;
 	}
 
 	/**
-	 * Два і більше дні: читаємо тільки з локального кешу (per-link, якщо
-	 * обрано конкретну кампанію, інакше client-level підсумок), Keitaro тут
+	 * Два і більше дні: читаємо тільки з локального кешу — підсумок по
+	 * кампанії (усі пошарені клієнту потоки цієї гри разом), якщо кампанію
+	 * обрано, інакше client-level підсумок по всіх кампаніях. Keitaro тут
 	 * ніколи не викликається напряму.
 	 */
-	private function get_daily_series( $client, $link, $date_from, $date_to ) {
-		$rows = $link
-			? CP_DB::get_link_stats_range( $link->id, $date_from, $date_to )
+	private function get_daily_series( $client, $campaign_id, $date_from, $date_to ) {
+		$rows = $campaign_id
+			? CP_DB::get_campaign_stats_range( $client->id, $campaign_id, $date_from, $date_to )
 			: CP_DB::get_stats_range( $client->id, $date_from, $date_to );
 
 		$totals = $this->zero_metrics();

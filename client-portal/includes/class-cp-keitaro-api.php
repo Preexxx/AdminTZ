@@ -69,9 +69,23 @@ class CP_Keitaro_Api {
 	}
 
 	/**
+	 * Потоки (streams) усередині ОДНІЄЇ кампанії — `/admin_api/v1/campaigns/{id}/streams`.
+	 * Це і є той рівень, на якому клієнти фактично розділені: кампанія —
+	 * це гра, а потік усередині неї — конкретний зріз трафіку (гео/джерело/
+	 * офер), який ми віддаємо одному клієнту. Traffic source (ts_id) — зовсім
+	 * інший, набагато грубіший вимір ("Google Ads" на всю Keitaro), і для
+	 * розмежування клієнтів усередині спільної кампанії не підходить.
+	 */
+	public function get_streams( $campaign_id ) {
+		if ( empty( $campaign_id ) ) {
+			return array();
+		}
+		return $this->request( 'GET', self::ENDPOINT_CAMPAIGNS . '/' . rawurlencode( $campaign_id ) . '/streams' );
+	}
+
+	/**
 	 * id => назва, для випадаючих списків в адмінці (замість вільного
-	 * текстового поля, де неважко помилитися в номері — саме так одного разу
-	 * замість Source ID "5" кілька прив'язок поспіль отримали "55"/"58").
+	 * текстового поля, де неважко помилитися в номері).
 	 * Короткий кеш (5 хв), щоб відкриття форми щоразу не било в Keitaro API.
 	 */
 	public function get_campaign_options() {
@@ -82,7 +96,40 @@ class CP_Keitaro_Api {
 		return $this->get_id_name_options( 'cp_keitaro_source_options', array( $this, 'get_sources' ) );
 	}
 
-	private function get_id_name_options( $transient_key, $fetch_callback ) {
+	/**
+	 * Потоки конкретної кампанії, id => назва (з позначкою стану, якщо потік
+	 * вимкнено) — для JS, що перебудовує список потоків при зміні кампанії
+	 * у формі "Додати клієнта"/"Прив'язки".
+	 */
+	public function get_stream_options( $campaign_id ) {
+		if ( empty( $campaign_id ) ) {
+			return array();
+		}
+		return $this->get_id_name_options(
+			'cp_keitaro_streams_' . $campaign_id,
+			function () use ( $campaign_id ) {
+				return $this->get_streams( $campaign_id );
+			},
+			true
+		);
+	}
+
+	/**
+	 * Усі потоки всіх кампаній одразу, згруповані по campaign_id — так форма
+	 * може віддати JS одну готову мапу (campaign_id => [id => назва]) і
+	 * перемикати список потоків на льоту без зайвих запитів при зміні
+	 * вибраної кампанії.
+	 */
+	public function get_all_stream_options() {
+		$campaigns = $this->get_campaign_options();
+		$by_campaign = array();
+		foreach ( array_keys( $campaigns ) as $campaign_id ) {
+			$by_campaign[ $campaign_id ] = $this->get_stream_options( $campaign_id );
+		}
+		return $by_campaign;
+	}
+
+	private function get_id_name_options( $transient_key, $fetch_callback, $mark_disabled = false ) {
 		$cached = get_transient( $transient_key );
 		if ( false !== $cached ) {
 			return $cached;
@@ -95,9 +142,14 @@ class CP_Keitaro_Api {
 
 		$options = array();
 		foreach ( $items as $item ) {
-			if ( isset( $item['id'], $item['name'] ) ) {
-				$options[ (string) $item['id'] ] = $item['name'];
+			if ( ! isset( $item['id'], $item['name'] ) ) {
+				continue;
 			}
+			$name = $item['name'];
+			if ( $mark_disabled && isset( $item['state'] ) && 'active' !== $item['state'] ) {
+				$name .= ' (вимкнено)';
+			}
+			$options[ (string) $item['id'] ] = $name;
 		}
 
 		set_transient( $transient_key, $options, 5 * MINUTE_IN_SECONDS );
@@ -105,9 +157,15 @@ class CP_Keitaro_Api {
 	}
 
 	/**
-	 * $params: date_from, date_to (Y-m-d), campaign_id, source_id,
+	 * $params: date_from, date_to (Y-m-d), campaign_id, stream_id, source_id,
 	 * grouping ('day' за замовчуванням, або 'day_hour' для погодинної
 	 * розбивки — має сенс лише в межах одного календарного дня).
+	 *
+	 * stream_id — основний розділювач клієнтів усередині спільної кампанії
+	 * (campaign = гра, stream = конкретний потік трафіку, який ми віддали
+	 * клієнту). source_id (ts_id) — окремий, необов'язковий фільтр по
+	 * traffic source, не плутати з stream_id.
+	 *
 	 * Повертає масив рядків звіту (по днях або по годинах) або WP_Error.
 	 */
 	public function build_report( $params ) {
@@ -119,7 +177,7 @@ class CP_Keitaro_Api {
 				'to'       => $params['date_to'] . ' 23:59:59',
 				'timezone' => wp_timezone_string(),
 			),
-			'columns'  => array( 'campaign_id', 'ts_id' ),
+			'columns'  => array( 'campaign_id', 'stream_id', 'ts_id' ),
 			'metrics'  => self::METRICS,
 			'grouping' => array( $grouping ),
 			'filters'  => array(),
@@ -130,6 +188,14 @@ class CP_Keitaro_Api {
 				'name'       => 'campaign_id',
 				'operator'   => 'EQUALS',
 				'expression' => $params['campaign_id'],
+			);
+		}
+
+		if ( ! empty( $params['stream_id'] ) ) {
+			$body['filters'][] = array(
+				'name'       => 'stream_id',
+				'operator'   => 'EQUALS',
+				'expression' => $params['stream_id'],
 			);
 		}
 

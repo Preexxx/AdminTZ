@@ -27,6 +27,13 @@
 	margin: 0;
 }
 
+.cp-dashboard__client-name {
+	font-size: 15px;
+	font-weight: 500;
+	color: #666;
+	margin-left: 10px;
+}
+
 .cp-dashboard__controls {
 	display: flex;
 	align-items: center;
